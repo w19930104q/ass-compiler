@@ -132,6 +132,90 @@ describe('text compiler', () => {
     ]);
   });
 
+  it('should reset tag scope at the position of \\r', () => {
+    const { parsed } = parseText('{\\b1\\r\\i1}x');
+    const { slices } = compileText({ styles, style, parsed });
+    expect(slices).to.deep.equal([
+      {
+        style: 'Default',
+        fragments: [{ tag: { i: 1 }, text: 'x', drawing: null }],
+      },
+    ]);
+  });
+
+  it('should only respect tags after the last \\r in the same block', () => {
+    const { parsed } = parseText('{\\ralt\\b1\\r\\i1}x');
+    const { slices } = compileText({ styles, style, parsed });
+    expect(slices).to.deep.equal([
+      {
+        style: 'Default',
+        fragments: [{ tag: { i: 1 }, text: 'x', drawing: null }],
+      },
+    ]);
+  });
+
+  it('should not create empty slice when \\r comes first', () => {
+    const { parsed } = parseText('{\\r}x');
+    const { slices } = compileText({ styles, style, parsed });
+    expect(slices).to.deep.equal([
+      {
+        style: 'Default',
+        fragments: [{ tag: {}, text: 'x', drawing: null }],
+      },
+    ]);
+  });
+
+  it('should use the reset style for tag presets', () => {
+    const { parsed } = parseText('{\\fs30}a{\\ralt\\fs+5}b{\\r\\1c}c');
+    const { slices } = compileText({ styles, style, parsed });
+    expect(slices[0].fragments[0].tag.fs).to.equal(30);
+    // `alt` has Fontsize 24, and `\r` drops the inherited `\fs30`
+    expect(slices[1].fragments[0].tag.fs).to.equal(36);
+    // `\1c` resets to the primary colour of the current style
+    expect(slices[2].fragments[0].tag.c1).to.equal('FFFFFF');
+  });
+
+  it('should keep tag scope across \\N within a line', () => {
+    const { parsed } = parseText('{\\b1}line1\\N{\\i1}line2');
+    const { slices } = compileText({ styles, style, parsed });
+    expect(slices[0].fragments).to.deep.equal([
+      { tag: { b: 1 }, text: 'line1\\N', drawing: null },
+      { tag: { b: 1, i: 1 }, text: 'line2', drawing: null },
+    ]);
+  });
+
+  it('should compile drawing mode persisted across blocks', () => {
+    const { parsed } = parseText('{\\p1}m 0 0 l 1 1{\\b1}m 2 2 l 3 3{\\p0}tail');
+    const { slices } = compileText({ styles, style, parsed });
+    expect(slices[0].fragments.length).to.equal(3);
+    expect(slices[0].fragments[0].tag).to.deep.equal({ p: 1 });
+    expect(slices[0].fragments[0].drawing.d).to.equal('M0,0L1,1');
+    expect(slices[0].fragments[1].tag).to.deep.equal({ p: 1, b: 1 });
+    expect(slices[0].fragments[1].drawing.d).to.equal('M2,2L3,3');
+    expect(slices[0].fragments[2]).to.deep.equal({
+      tag: { p: 0, b: 1 },
+      text: 'tail',
+      drawing: null,
+    });
+  });
+
+  it('should not leak drawing mode across \\r', () => {
+    const { parsed } = parseText('{\\p1}m 0 0 l 1 1{\\r}text');
+    const { slices } = compileText({ styles, style, parsed });
+    expect(slices[1].fragments).to.deep.equal([
+      { tag: {}, text: 'text', drawing: null },
+    ]);
+  });
+
+  it('should safely skip unknown tags without breaking tag scope', () => {
+    const { parsed } = parseText('{\\foo123\\b1\\bar(1,2)}x{\\unknown}y');
+    const { slices } = compileText({ styles, style, parsed });
+    expect(slices[0].fragments).to.deep.equal([
+      { tag: { b: 1 }, text: 'x', drawing: null },
+      { tag: { b: 1 }, text: 'y', drawing: null },
+    ]);
+  });
+
   it('should compile text with \\t', () => {
     const { parsed } = parseText('{\\t(\\frx30)\\t(0,500,\\fry60)\\t(\\frz90)\\t(0,500,1,\\frz60)}foo');
     const { slices } = compileText({ styles, style, parsed, start: 0, end: 1 });

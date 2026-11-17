@@ -31,18 +31,24 @@ export function compileText({ styles, style, parsed, start, end }) {
   let prevTag = {};
   for (let i = 0; i < parsed.length; i++) {
     const { tags, text, drawing } = parsed[i];
-    let reset;
-    for (let j = 0; j < tags.length; j++) {
-      const tag = tags[j];
-      reset = tag.r === undefined ? reset : tag.r;
-    }
     const fragment = {
-      tag: reset === undefined ? inheritTag(prevTag) : {},
+      tag: inheritTag(prevTag),
       text,
       drawing: drawing.length ? compileDrawing(drawing) : null,
     };
     for (let j = 0; j < tags.length; j++) {
       const tag = tags[j];
+      if (tag.r !== undefined) {
+        // `\r` resets the tag scope at its own position: tags inherited
+        // from previous fragments and tags before it in the same block
+        // are dropped, and following content belongs to a new slice.
+        if (slice.fragments.length) {
+          slices.push(slice);
+        }
+        slice = { style: styles[tag.r] ? tag.r : style, fragments: [] };
+        fragment.tag = {};
+        continue;
+      }
       alignment = alignment || a2an[tag.a || 0] || tag.an;
       q = compileTag(tag, 'q') || q;
       if (!move) {
@@ -56,9 +62,9 @@ export function compileText({ styles, style, parsed, start, end }) {
       clip = compileTag(tag, 'clip') || clip;
       const key = Object.keys(tag)[0];
       if (key && !~globalTags.indexOf(key)) {
-        const sliceTag = styles[style].tag;
+        const sliceTag = styles[slice.style].tag;
         const { c1, c2, c3, c4 } = sliceTag;
-        const fs = prevTag.fs || sliceTag.fs;
+        const fs = fragment.tag.fs || sliceTag.fs;
         const compiledTag = compileTag(tag, key, { start, end, c1, c2, c3, c4, fs });
         if (key === 't') {
           fragment.tag.t = fragment.tag.t || [];
@@ -69,10 +75,6 @@ export function compileText({ styles, style, parsed, start, end }) {
       }
     }
     prevTag = fragment.tag;
-    if (reset !== undefined) {
-      slices.push(slice);
-      slice = { style: styles[reset] ? reset : style, fragments: [] };
-    }
     if (fragment.text || fragment.drawing) {
       const prev = slice.fragments[slice.fragments.length - 1] || {};
       if (prev.text && fragment.text && !Object.keys(fragment.tag).length) {

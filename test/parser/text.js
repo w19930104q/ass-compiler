@@ -65,6 +65,41 @@ describe('text parser', () => {
     expect(parseText('{\\p1\\p0}m 0 0 l 1 0').parsed[0].drawing).to.deep.equal([]);
   });
 
+  it('should keep drawing mode across blocks until \\p0', () => {
+    expect(parseText('{\\p1}m 0 0 l 1 1{\\b1}m 2 2 l 3 3{\\p0}text')).to.deep.equal({
+      raw: '{\\p1}m 0 0 l 1 1{\\b1}m 2 2 l 3 3{\\p0}text',
+      combined: 'text',
+      parsed: [
+        {
+          tags: [{ p: 1 }],
+          text: '',
+          drawing: [['m', '0', '0'], ['l', '1', '1']],
+        },
+        {
+          tags: [{ b: 1 }],
+          text: '',
+          drawing: [['m', '2', '2'], ['l', '3', '3']],
+        },
+        { tags: [{ p: 0 }], text: 'text', drawing: [] },
+      ],
+    });
+  });
+
+  it('should reset drawing mode by \\r', () => {
+    expect(parseText('{\\p1}m 0 0 l 1 1{\\r}text')).to.deep.equal({
+      raw: '{\\p1}m 0 0 l 1 1{\\r}text',
+      combined: 'text',
+      parsed: [
+        {
+          tags: [{ p: 1 }],
+          text: '',
+          drawing: [['m', '0', '0'], ['l', '1', '1']],
+        },
+        { tags: [{ r: '' }], text: 'text', drawing: [] },
+      ],
+    });
+  });
+
   it('should handle mismatched brackets', () => {
     expect(parseText('{ a { b }c')).to.deep.equal({
       raw: '{ a { b }c',
